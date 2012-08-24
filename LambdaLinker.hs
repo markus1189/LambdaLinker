@@ -6,23 +6,15 @@ import Control.Monad (liftM,forM)
 import qualified System.Directory as S
 import System.Directory (doesDirectoryExist)
 
-import System.FilePath ((</>))
+import System.FilePath ((</>),addTrailingPathSeparator)
+import Data.List (isSuffixOf)
 
-getRecursiveContentsP :: (FilePath -> Bool) -> FilePath -> IO [FilePath]
-getRecursiveContentsP p root = do
-  contents <- getDirectoryContents root
-  liftM concat $ forM contents $ \name -> do
-    let path = root </> name
-    isDirectory <- doesDirectoryExist path
-    if isDirectory && (doRecurse name)
-      then getRecursiveContentsP p path
-      else return [path]
-  where doRecurse = undefined
+type Predicate = FilePath -> Bool
 
 getDirectoryContents :: FilePath -> IO [FilePath]
-getDirectoryContents path = filterD `liftM` (expanded >>= S.getDirectoryContents)
+getDirectoryContents path = filterD `liftM` (exPath >>= S.getDirectoryContents)
   where filterD = filter (`notElem` [".",".."])
-        expanded = expandPath path
+        exPath = expandPath path
 
 expandPath :: FilePath -> IO FilePath
 expandPath (x:xs)
@@ -30,3 +22,26 @@ expandPath (x:xs)
     home <- S.getHomeDirectory
     return $ home ++ xs
   | otherwise = return (x:xs)
+
+extensionIsSymlink :: Predicate
+extensionIsSymlink = (".symlink" `isSuffixOf`)
+
+gitDir :: Predicate
+gitDir = (".git/" `isSuffixOf`) . addTrailingPathSeparator
+
+predicate = neitherP gitDir extensionIsSymlink
+
+notP :: Predicate -> Predicate
+notP p path = not $ p path
+
+andP :: Predicate -> Predicate -> Predicate
+andP = liftP (&&)
+
+orP :: Predicate -> Predicate -> Predicate
+orP = liftP (||)
+
+neitherP :: Predicate -> Predicate -> Predicate
+neitherP p1 p2 path = not $ (p1 path) || (p2 path)
+
+liftP :: (Bool -> Bool -> Bool) -> Predicate -> Predicate -> Predicate
+liftP f p1 p2 path = p1 path `f` p2 path
