@@ -5,6 +5,8 @@ import Control.Monad ( liftM
                      ,forM
                      )
 
+import Control.Exception (handle)
+
 import qualified System.Directory as S
 
 import System.Directory ( doesDirectoryExist
@@ -18,7 +20,9 @@ import System.FilePath ( (</>)
                        , takeDirectory
                        )
 
-import System.Posix.Files ( createSymbolicLink )
+import System.Posix.Files ( createSymbolicLink
+                          , getSymbolicLinkStatus
+                          )
 
 import Data.List (isSuffixOf,sort)
 
@@ -30,7 +34,7 @@ type Predicate = FilePath -> Bool
 linkRelativeFilesToHomeDir :: IO ()
 linkRelativeFilesToHomeDir = do
   curDir <- getCurrentDirectory
-  linkFiles (addTrailingPathSeparator curDir) "~/Desktop/fake_home/"
+  linkFiles (addTrailingPathSeparator curDir) "~/"
 
 linkFiles :: FilePath -> FilePath -> IO ()
 linkFiles from to = do
@@ -42,9 +46,13 @@ linkFiles from to = do
 
 linkDotfile :: FilePath -> FilePath -> IO ()
 linkDotfile from to = do
-  putStrLn $ "Link: " ++ from ++ " -> " ++ to
-  createDirectoryIfMissing True (takeDirectory to)
-  createSymbolicLink from to
+  symlinkExists <- doesSymlinkExist to
+  if symlinkExists
+    then putStrLn $ "Skipped: " ++ to
+    else do
+      putStrLn $ from ++ " -> " ++ to
+      createDirectoryIfMissing True (takeDirectory to)
+      {-createSymbolicLink from to-}
 
 buildDestinations :: FilePath -> FilePath -> [FilePath] -> [FilePath]
 buildDestinations from to = map $ buildDestination from to
@@ -103,3 +111,10 @@ neitherP p1 p2 path = not $ (p1 path) || (p2 path)
 
 liftP :: (Bool -> Bool -> Bool) -> Predicate -> Predicate -> Predicate
 liftP f p1 p2 path = p1 path `f` p2 path
+
+doesSymlinkExist :: FilePath -> IO Bool
+doesSymlinkExist path = handle onErrorFalse $
+    expandPath path >>= getSymbolicLinkStatus >> return True
+
+onErrorFalse :: IOError -> IO Bool
+onErrorFalse _ = return False
